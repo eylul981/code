@@ -1,0 +1,211 @@
+package assignment4;
+
+
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedList;
+
+public class MyHashTable<K,V> implements Iterable<HashPair<K,V>>{
+    // num of entries to the table
+    private int numEntries;
+    // num of buckets 
+    private int numBuckets;
+    // load factor needed to check for rehashing 
+    private static final double MAX_LOAD_FACTOR = 0.75;
+    // ArrayList of buckets. Each bucket is a LinkedList of HashPair
+    private ArrayList<LinkedList<HashPair<K,V>>> buckets; 
+    
+    // constructor
+    public MyHashTable(int initialCapacity) {
+   
+    	if (initialCapacity < 0) {
+   		 throw new IllegalArgumentException("Error!You have entered illegal capacity: " + initialCapacity);
+   	}
+   	this.buckets= new ArrayList<LinkedList<HashPair<K, V>>>(initialCapacity);
+   	this.numBuckets = initialCapacity ;
+   	this.numEntries = 0;
+   	for (int i=0; i<this.numBuckets; i++) {
+   	 	LinkedList<HashPair<K, V>> newLinkedList = new LinkedList<HashPair<K, V>>(); 
+   		this.buckets.add(newLinkedList);
+   		}
+        //ADD YOUR CODE ABOVE THIS
+    }
+    
+    public int size() {
+        return this.numEntries;
+    }
+    
+    public int numBuckets() {
+        return this.numBuckets;
+    }
+    
+    /**
+     * Returns the buckets vairable. Usefull for testing  purposes.
+     */
+    public ArrayList<LinkedList< HashPair<K,V> > > getBuckets(){
+        return this.buckets;
+    }
+    /**
+     * Given a key, return the bucket position for the key. 
+     */
+    public int hashFunction(K key) {
+        int hashValue = Math.abs(key.hashCode())%this.numBuckets;
+        return hashValue;
+    }
+    /**
+     * Takes a key and a value as input and adds the corresponding HashPair
+     * to this HashTable. Expected average run time  O(1)
+     */
+    public V put(K key, V value) {
+       
+        if ( ( numEntries+1.0/numBuckets) > MAX_LOAD_FACTOR)  {
+        	this.rehash() ;
+        }
+        int hashV = hashFunction(key) ;
+        LinkedList<HashPair < K, V >> curll = buckets.get(hashV) ;
+        for (HashPair <K ,V > cur : curll ) {
+        		if (cur.getKey().equals(key) ) {
+        			V old = cur.getValue();
+        			cur.setValue(value); 
+        			return old; 
+        		}
+        }
+        curll.addLast(new HashPair < K , V > (key , value ));
+        return null;
+        
+    } 
+    /**
+     * Get the value corresponding to key. Expected average runtime = O(1)
+     */
+    
+    public V get(K key) {
+    	 int hashValue = hashFunction(key) ; 
+    	 for ( int i = 0 ; i < buckets.get(hashValue ) .size () ; i ++) {
+    		 if(buckets.get(hashValue).get(i).getKey().equals(key)) {
+    			 return buckets.get(hashValue).get(i).getValue();
+    		 }
+    	 }
+    	 return null;
+    }
+    
+    /**
+     * Remove the HashPair correspoinding to key . Expected average runtime O(1) 
+     */
+    public V remove(K key) {
+    
+        int index= hashFunction(key);
+    		    LinkedList <HashPair<K, V>> list = buckets.get(index);
+    		    	for (HashPair <K, V> pair : list) {
+                        if (pair.getKey().equals(key)) {
+                            V KeyValue = pair.getValue();
+                            list.remove(pair);
+                            numEntries--;
+                            return KeyValue;
+                        }
+                    }
+    		    		
+       return null;
+        //ADD YOUR CODE ABOVE HERE
+         
+    }
+    
+    // Method to double the size of the hashtable if load factor increases
+    // beyond MAX_LOAD_FACTOR.
+    // Made public for ease of testing.
+    
+    public void rehash() {
+
+    		ArrayList<LinkedList<HashPair<K,V>>> oldtable = this.buckets; 
+		numBuckets = numBuckets*2;
+		buckets = new ArrayList<LinkedList<HashPair<K,V>>>(numBuckets);
+		//numEntries=0;
+		for (int i = 0 ; i <numBuckets; i++) {		
+		LinkedList<HashPair< K, V>> newLinkedList = new LinkedList <HashPair<K,V>>() ;
+				buckets.add(i, newLinkedList) ;
+		}
+		for (LinkedList<HashPair<K,V>> index : oldtable) {
+				
+			if ((index != null)) {
+				for(HashPair<K,V> pair: index) {
+					this.put(pair.getKey(), pair.getValue());
+				}
+			}
+		}
+		
+    }
+    
+    
+    /**
+     * Return a list of all the keys present in this hashtable.
+     */
+    public ArrayList<K> keys() {
+    	
+        //ADD YOUR CODE BELOW HERE
+	   ArrayList<K> Keys = new ArrayList<K>();
+   		for (int i=0; i<numBuckets; i++) {
+   			for (HashPair<K,V> pair: buckets.get(i)) {
+   				Keys.add(pair.getKey());
+   			}
+   		}
+   		return Keys;
+        //ADD CODE ABOVE HERE
+   
+    }
+    /**
+     * Returns an ArrayList of unique values present in this hashtable.
+     * Expected average runtime is O(n)
+     */
+    //returns an arraylist containing all the unique values in the list
+    public ArrayList<V> values() {
+        //ADD CODE BELOW HERE
+	    	MyHashTable<V,K> newtable = new MyHashTable<V,K> (numBuckets);
+	    		for (int i=0; i<numBuckets; i++) {
+	    			for (HashPair<K,V> pair : buckets.get(i)) {
+	    				newtable.put(pair.getValue(), pair.getKey());
+	    		}
+	    	}
+        return newtable.keys();
+        //ADD CODE ABOVE HERE
+    }
+    
+    @Override
+    public MyHashIterator iterator() {
+        return new MyHashIterator();
+    }
+    
+    private class MyHashIterator implements Iterator<HashPair<K,V>> {
+        private LinkedList<HashPair<K,V>> entries;
+        
+        private MyHashIterator() {
+            //ADD YOUR CODE BELOW HERE
+        		entries=new LinkedList<HashPair<K,V>>();
+        		for(LinkedList<HashPair<K,V>> currList :buckets) {
+        			//if(!currList.isEmpty())
+        				//for (HashPair<K, V> currentPair : currList) {
+        					entries.addAll(currList);
+        					
+        			
+        		}
+        	}  //ADD YOUR CODE ABOVE HERE
+        
+        
+        @Override
+        public boolean hasNext() {
+            //ADD YOUR CODE BELOW HERE
+        		if (!entries.isEmpty()) {
+        			return true;
+        		}
+        		return false;
+        
+            //ADD YOUR CODE ABOVE HERE
+        }
+        
+        @Override
+        public HashPair<K,V> next() {
+            //ADD YOUR CODE BELOW HERE
+        		return entries.removeFirst();
+            //ADD YOUR CODE ABOVE HERE
+        }
+    }
+}
