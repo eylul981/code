@@ -1,7 +1,6 @@
 
  
-	//Eylul Kasapoglu
-	//260793350
+	
 	import java.io.Serializable;
 	import java.util.ArrayList;
 	import java.text.*;
