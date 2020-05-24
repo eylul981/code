@@ -1,0 +1,190 @@
+import java.util.ArrayList;
+
+import BellmanFord.BellmanFordException;
+import BellmanFord.NegativeWeightException;
+import BellmanFord.PathDoesNotExistException;
+
+public class BellmanFord{
+
+	
+	/**
+	 * Utility class. Don't use.
+	 */
+	public class BellmanFordException extends Exception{
+		private static final long serialVersionUID = -4302041380938489291L;
+		public BellmanFordException() {super();}
+		public BellmanFordException(String message) {
+			super(message);
+		}
+	}
+	
+	/**
+	 * Custom exception class for BellmanFord algorithm
+	 * 
+	 * Use this to specify a negative cycle has been found 
+	 */
+	public class NegativeWeightException extends BellmanFordException{
+		private static final long serialVersionUID = -7144618211100573822L;
+		public NegativeWeightException() {super();}
+		public NegativeWeightException(String message) {
+			super(message);
+		}
+	}
+	
+	/**
+	 * Custom exception class for BellmanFord algorithm
+	 *
+	 * Use this to specify that a path does not exist
+	 */
+	public class PathDoesNotExistException extends BellmanFordException{
+		private static final long serialVersionUID = 547323414762935276L;
+		public PathDoesNotExistException() { super();} 
+		public PathDoesNotExistException(String message) {
+			super(message);
+		}
+	}
+	
+    private int[] distances = null;
+    private int[] predecessors = null;
+    private int source;
+
+    BellmanFord(WGraph g, int source) throws BellmanFordException{
+        /* Constructor, input a graph and a source
+         * Computes the Bellman Ford algorithm to populate the
+         * attributes 
+         *  distances - at position "n" the distance of node "n" to the source is kept
+         *  predecessors - at position "n" the predecessor of node "n" on the path
+         *                 to the source is kept
+         *  source - the source node
+         *
+         *  If the node is not reachable from the source, the
+         *  distance value must be Integer.MAX_VALUE
+         *  
+         *  When throwing an exception, choose an appropriate one from the ones given above
+         */
+    	
+    	/* YOUR CODE GOES HERE */
+    		predecessors = new int[g.getNbNodes()]; //predecessor array must be equal to the number of nodes. 
+    		
+    		this.source = source;
+    		distances = new int[g.getNbNodes()]; //we do the same for the distances array.
+    	
+    														
+    		for (int index = 0; index < g.getNbNodes(); index++) { //We assume nodes from source to destination are infinite. 
+    			distances[index]=Integer.MAX_VALUE;
+		}
+    	
+    	
+    		//We initialize the predecessors of every node =-1, since they will not be used at the beginning
+    		for (int i = 0; i < g.getNbNodes(); i++) {
+    			predecessors[i]=-1;
+    		}
+    	
+    	
+    		distances[this.source] = 0; // initialize source vertex to be zero
+    		ArrayList<Edge> edges = new ArrayList<Edge>();
+    		edges = g.getEdges();
+    		
+    	
+    		for (int i = 1; i < g.getNbNodes(); i++) { //max path length = number of nodes-1 
+    			
+    			for (int j = 0; j < edges.size(); j++) {// relax all edges |V|-1 times
+				
+    				int start = edges.get(j).nodes[0]; // source 
+    				int target = edges.get(j).nodes[1]; // destination 
+				int weight = edges.get(j).weight; // weight 
+				
+				if(distances[start]!=Integer.MAX_VALUE && distances[start]+weight<distances[target]) { //if distances aren't infinite and u + weightu < v then:
+					distances[target]=distances[start] + weight; //v = u + weightu
+					predecessors[target]=start;
+				}
+					
+			}
+		}
+   
+    		//No we do the same and check for negative cycles
+    			for (int j = 0; j < edges.size(); j++) {
+		
+    				int u = edges.get(j).nodes[0]; 
+    				int v = edges.get(j).nodes[1]; 
+    				int weight = edges.get(j).weight; 
+			
+    				if(distances[u]!=Integer.MAX_VALUE && distances[u]+weight<distances[v])//if distances aren't infinite and u + weightu < v then:
+				throw new NegativeWeightException("Negative cycles found!!");
+    			}
+    }
+
+    public int[] shortestPath(int destination) throws BellmanFordException{
+        /*Returns the list of nodes along the shortest path from 
+         * the object source to the input destination
+         * If not path exists an Exception is thrown
+         * Choose appropriate Exception from the ones given 
+         */
+
+        /* YOUR CODE GOES HERE (update the return statement as well!) */
+    	
+   
+    		int[] shortestpath = new int[distances.length];
+    		int pathLength=0;
+    		int dest = destination;
+    		int index = distances.length-1;
+    		shortestpath[index--] = destination;
+    		pathLength++;
+    	
+    		
+    		while(predecessors[dest]!=source) {
+    			if(predecessors[dest]==-1) { // if there is no predecessor
+    				throw new PathDoesNotExistException("Path doesn't exist from node "+ source + " to node "+ destination);
+    			}
+    		
+    			dest=predecessors[dest];
+    			shortestpath[index--]=dest;
+    			pathLength++;	
+    		}
+    	
+    		int[] result = new int[pathLength+1];
+    	
+    		result[0] = source;
+    		for (int j = 0; j < pathLength; j++) {
+    			result[j+1] = shortestpath[index+1+j];
+		}
+    	
+    		return result;
+    }
+
+    public void printPath(int destination){
+        /*Print the path in the format s->n1->n2->destination
+         *if the path exists, else catch the Error and 
+         *prints it
+         */
+        try {
+            int[] path = this.shortestPath(destination);
+            for (int i = 0; i < path.length; i++){
+                int next = path[i];
+                if (next == destination){
+                    System.out.println(destination);
+                }
+                else {
+                    System.out.print(next + "-->");
+                }
+            }
+        }
+        catch (BellmanFordException e){
+            System.out.println(e);
+        }
+    }
+
+    public static void main(String[] args){
+
+        String file = args[0];
+        WGraph g = new WGraph(file);
+        try{
+            BellmanFord bf = new BellmanFord(g, g.getSource());
+            bf.printPath(g.getDestination());
+        }
+        catch (BellmanFordException e){
+            System.out.println(e);
+        }
+
+   } 
+}
