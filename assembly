@@ -1,0 +1,1121 @@
+
+.data
+
+#Must use accurate file path.
+#file paths in MARS are relative to the mars.jar file.
+# if you put mars.jar in the same folder as test2.txt and your.asm, input: should work.
+input:	.asciiz "test.txt"
+output:	.asciiz "borded.pgm"	#used as output
+
+borderwidth: .word 2    #specifies border width
+buffer:  .space 2048		# buffer for upto 2048 bytes
+newbuff: .space 2048
+headerbuff: .space 2048  #stores header
+
+#any extra data you specify MUST be after this line 
+.align 2
+array: .space 672
+.align 2
+border_array: .space 9248#enough for a border of 5, since otherwise it would exceed the buffer space
+error:	.asciiz "An error occured\n"
+space: .asciiz" "
+line: .asciiz "\n"
+	.text
+	.globl main
+
+main:	la $a0,input		#readfile takes $a0 as input
+	jal readfile
+
+
+	la $a0,buffer		#$a1 will specify the "2D array" we will be flipping
+	la $a1,newbuff		#$a2 will specify the buffer that will hold the flipped array.
+	la $a2,borderwidth
+	jal bord
+
+
+	la $a0, output		#writefile will take $a0 as file location
+	la $a1,newbuff		#$a1 takes location of what we wish to write.
+	la $a2,borderwidth
+	la $a3,headerbuff
+	jal writefile
+
+	li $v0,10		# exit
+	syscall
+
+readfile:
+#Open the file to be read,using $a0
+	li 	$v0,13
+	li 	$a1,0		#flag for reading
+	li 	$a2,0		#mode ignored
+	syscall
+	move 	$s0,$v0		#save the file descriptor in v0
+#Conduct error check, to see if file exists
+	
+	slt 	$t0,$s0,$0	#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error	#if t0 != 0, go to error
+
+	
+# read from file
+	li	 $v0,14		#syscall to read from an open file
+# use correct file descriptor, and point to buffer
+	add 	$a0,$s0,$0	#cope file decriptor into a0
+	la	 $a1, buffer	#load the address of the input buffer in a1
+# hardcode maximum number of chars to read
+	li 	$a2,2048	#number of characters to be read store in a2
+# read from file
+	syscall
+# address of the ascii string you just read is returned in $v1.
+	slt 	$t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error		#if t0 != 0, go to error
+# the text of the string is in buffer
+	#move $t1,$v1
+# close the file (make sure to check for errors)
+  	li 	$v0,16
+  	add	 $a0,$s0,$0
+  	syscall
+  	
+  	slt 	$t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error	#if t0 != 0, go to error
+	
+	jr $ra
+
+
+
+bord:
+#a0=buffer
+#a1=newbuff
+#a2=borderwidth
+#Can assume 24 by 7 as input
+#Try to understand the math before coding!
+#EXAMPLE: if borderwidth=2, 24 by 7 becomes 28 by 11.
+#store the values of the buffer in an array
+	addi 	$s7,$0,0		#save the \0 character
+	addi 	$s6,$0,10		#save the \n character
+	addi 	$s5,$0,32		#save the space character
+	addi 	$s4,$0,47
+	addi 	$s3,$0,58
+	
+	la 	$t1,($a0)
+	la 	$t2,array
+	
+Loop2:	lb 	$t3,0($t1)		#check for \0,\n or space for current and next byte
+	lb 	$t4,1($t1)	 
+	beq 	$t3,$s7,End2
+	beq 	$t3,$s6,Next2
+	beq 	$t3,$s5,Next2
+	beq 	$t4,$s7,single2
+	beq 	$t4,$s6,single2
+	beq 	$t4,$s5,single2
+	j 	Number2
+single2:	
+	addi 	$t3,$t3,-48		#means t3 is followed by a space, a end of file or a new line character
+	sw  	$t3,0($t2)		#store in the array
+	addi 	$t1,$t1,1		#increment the address of the string to get the next byte that is a possible integer
+	addi 	$t2,$t2,4		# increment the address of the array to store the next element
+	j 	Loop2
+Next2:	addi 	$t1,$t1,1		#increment the address of the string without storing the character in the array
+					#because it is either a new line character or a space
+	j 	Loop2
+Number2: 
+	addi 	$t3,$t3,-48
+	mul  	$t3,$t3,$s6
+	addi 	$t4,$t4,-48
+	add  	$t3,$t3,$t4
+	sw   	$t3,0($t2)
+	addi 	$t1,$t1,2		#increment the address of the string to get the next byte that is a possible integer
+	addi 	$t2,$t2,4		# increment the address of the array to store the next element
+	j 	Loop2
+	
+End2:
+
+#********* NOW START THE BORDER
+	lw	$t1,0($a2)
+	mul	$t0,$t1,2
+	addi	$s0,$t0,24		#new width
+	addi	$s1,$t0,7		#new height
+	addi	$s2,$0,0		#counter for rows y
+	addi	$s3,$0,0		#counter for column x
+	addi	$s4,$t1,0		#s4 = x1 
+	addi	$s7,$s4,0		#s7 = y1
+	addi	$s5,$t1,23		#s5 = x2
+	addi	$s6,$t1,6		#s6 = y2
+	
+	la	$t7,array
+	la	$t6,border_array
+loop_border:	
+	slt	$t0,$s2,$s7		#check if y1 > y_curr
+	bne	$t0,$0,border		#means y1!<= y_curr
+	slt	$t0,$s6,$s2		#check if y2<y_curr
+	bne	$t0,$0,border		#means y_curr>!= y2
+	slt	$t0,$s3,$s4		#check if x1 > x_curr
+	bne	$t0,$0,border		#means x1 <= x_curr
+	slt	$t0,$s5,$s3		#check if x_curr>x2+1
+	bne	$t0,$0,border		#means x_curr<=x2+1
+					#Here means the pixel should be included in the cropped image so we add it to the cropped array
+	lw	$t1,0($t7)		#load the interger from the array
+	sw	$t1,0($t6)		#store the integer in the border array
+	addi	$t7,$t7,4		#increment the array
+	addi	$t6,$t6,4		#increment the border array 
+	addi	$s3,$s3,1		#increment the column counter x
+	rem	$t5,$s3,$s0		#remainder of column/width to know if we need to increment y
+	beq	$t5,$0,change_column	#means we need to change the column
+	j	loop_border
+
+	
+border:
+	addi	$t0,$0,15			  	#here means we add a pixel border
+	sw	$t0,0($t6)
+	addi	$t6,$t6,4		#increment the border array
+	addi	$s3,$s3,1		#increment the column counter x
+	rem	$t5,$s3,$s0		#remainder of column/width to know if we need to increment y
+	beq	$t5,$0,change_column	#means we need to change the column
+	j	loop_border
+					
+change_column:
+	beq	$s2,$s1,fill_border_buffer	#y_curr == new height of the image so we are done filling the array
+	addi	$s3,$0,0			#set the row x to 0
+	addi	$s2,$s2,1			#i +=1
+	
+	j	loop_border
+	
+fill_border_buffer:
+	
+	mul	$s5,$s0,$s1		#total number of pixel in s5
+	add	$s2,$0,$s0		#copy the width of the image in s2
+	add	$s7,$s1,$0		#copy the heigth of the new image in s7
+	addi	$s0,$0,10		#new line character
+	addi	$s1,$0,0		#counter	
+	addi	$s3,$0,3		#end of text
+	addi	$s4,$0,32		#space character
+	la	$t1,($a1)			#Load the address of the new buffer in t1
+	la	$t2,border_array		#load the address of the transposed array in t2
+	
+#store the first element in the new buffer
+first_line:	
+	lw	$t3,0($t2)		#load the first element of the array
+	
+	slt	$t4,$t3,$s0		#check if t3<10
+	beq	$t4,$0,big_num_first	#means t3>=10	so need to decompose the number into two character
+	
+	addi	$t3,$t3,48		#ascii value of the integer
+	sb	$t3,0($t1)		#store the pixel value
+	addi	$s1,$s1,1		#increment the counter
+	
+	
+	addi	$t1,$t1,1		#increment the buffer
+	addi 	$t2,$t2,4		#increment the array
+	
+Loop_flip:	
+	lw	$t3,0($t2)		#load the word of the transposed array in t3
+	
+	slt	$t4,$t3,$s0		#check if t3<10
+	beq	$t4,$0,big_num		#means t3>=10	so need to decompose the number into two character
+	
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+	
+	addi	$t3,$t3,48		#ascii value of the integer
+	sb	$t3,0($t1)		#store the pixel value
+	addi	$s1,$s1,1		#increment the counter
+	rem 	$t4,$s1,$s2
+	beq 	$t4,$0,new_line_flip	#multiple of 24 so change line in the file
+	
+	addi 	$t1,$t1,1		#increment the buffer, not a multiple of 24 so add a space between the numbers
+	addi 	$t2,$t2,4		#increment the array
+	j	Loop_flip
+	
+new_line_flip:
+	beq	$s1,$s5,last_flip	#counter == total number of pixel, means we are done
+	addi	$t1,$t1,1		#increment the buffer
+	sb	$s0,0($t1)		#store the new line character
+	addi	$t2,$t2,4		#get the first element of the next line
+	addi	$t1,$t1,1		#increment the buffer
+	j first_line
+	
+big_num:
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+big_num_first:
+	rem	$t4,$t3,10		#last didit of t3 in t4
+	sub	$t3,$t3,$t4		#t3 now multiple of 10
+	div	$t3,$t3,10		#t3 now contain the most significant digit
+	addi	$t4,$t4,48		#convert least significant digit to ascii	
+	addi	$t3,$t3,48		#convert most significant digit to ascii
+					#store the two digits in the new buffer
+	sb	$t3,0($t1)
+	addi	$t1,$t1,1
+	sb	$t4,0($t1)
+	addi	$s1,$s1,1		#increment the counter
+	rem 	$t4,$s1,$s2		# look if counter is a multiple of width, which means we need to change line
+	beq 	$t4,$0,new_line_flip	#multiple of width so change line in the file
+	
+	addi 	$t1,$t1,1		#increment the buffer
+	addi 	$t2,$t2,4		#increment the array
+	j	Loop_flip
+
+#have to convert the number in two characters and store it in the new buffer
+last_flip:	  
+	addi	$t1,$t1,1
+	sb	$0,0($t1)		#store the \0 char at the end of the buffer
+	jr	$ra
+
+	
+writefile:
+#slightly different from Q1.
+#use as many arguments as you would like to get this to work.
+#make sure the header matches the new dimensions!
+	lw	$t1,0($a2)
+	mul	$t0,$t1,2
+	add	$s0,$t0,24		#new width
+	add	$s1,$t0,7		#new height
+	mul	$s2,$s0,$s1		#total number of pixel in te cropped_array in s2
+	
+	addi	$s3,$0,80		#s3=='P'
+	addi	$s4,$0,50		#s4=='2'
+	addi	$s5,$0,32		#s5==' '
+	addi	$s6,$0,10		#s6=='\n'
+	addi	$s7,$0,0		#s7=='\0'
+	
+#start by filling the header buff
+	la	$t0,($a3)		#address of header buff in t0
+	sb	$s3,0($t0)
+	sb	$s4,1($t0)
+	sb	$s6,2($t0)
+	addi	$t0,$t0,3	
+	slti	$t1,$s0,10		#check if width<10
+	bne	$t1,$0,single_width	#means width<=9
+	rem	$t1,$s0,10		#get the last digit of the width
+	sub	$s0,$s0,$t1		#get the most significant bit of the width
+	div	$s0,$s0,10		#get the most significant digit of the width
+	addi	$t1,$t1,48		#convert the two digits in ascii
+	addi	$s0,$s0,48
+	sb	$s0,0($t0)		#store the width follow by a space in the header
+	sb	$t1,1($t0)
+	sb	$s5,2($t0)
+	addi	$t0,$t0,3
+height:
+	slti	$t1,$s1,10		#check if width<10
+	bne	$t1,$0,single_heigth	#means width<=9
+	rem	$t1,$s1,10		#get the last digit of the heigth
+	sub	$s0,$s1,$t1		#get the most significant bit of the heigth
+	div	$s0,$s1,10		#get the most significant digit of the heigth
+	addi	$t1,$t1,48		#convert the two digits in ascii
+	addi	$s0,$s0,48
+	sb	$s0,0($t0)		#store the height follow by a \n in the header
+	sb	$t1,1($t0)
+	sb	$s6,2($t0)
+	addi	$t0,$t0,3
+	j	last_header
+
+single_width:
+	addi	$s0,$s0,48		#convert width integer to ascii
+	sb	$s0,0($t0)		#add the width to the header
+	sb	$s5,1($t0)		#add space after the width
+	addi	$t0,$t0,2
+	j	height
+single_heigth:
+	addi	$s1,$s1,48		#convert width integer to ascii
+	sb	$s1,0($t0)		#add the heigth to the header
+	sb	$s6,1($t0)		#add \n after the header
+	addi	$t0,$t0,2
+last_header:
+	addi	$s0,$0,49		#store '1' in s0
+	addi	$s1,$0,53		#store '5' in s1
+	sb	$s0,0($t0)		#store "15\n\0" in the header
+	sb	$s1,1($t0)
+	sb	$s6,2($t0)
+	sb	$s7,3($t0)
+#write in the file
+	add $sp,$sp,-4
+	sw  $a1,0($sp)
+#saving borderwidth in s0
+	lw $s0,0($a2)
+#open file to be written to, using $a0.
+	li $v0,13
+	li $a1,9		#flag for writting
+	li $a2,0		#mode ignored
+	syscall
+	add $s0,$v0,$0		#save the file descriptor in v0
+	
+	slt $t0,$s0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+#write the specified characters as seen on assignment PDF:
+	li $v0,15
+	add $a0,$s0,$0
+	la $a1,headerbuff
+	beq $s0,$0,small_header	#check if borderwidth<1
+	li $a2,12
+	j copy
+small_header:
+	li $a2,11
+copy:	syscall
+	
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+	
+	
+	li $v0,15
+	lw $a1,0($sp)
+	addi $sp,$sp,4
+	li $a2,2048
+	syscall
+
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+#close the file (make sure to check for errors)	
+	li $v0,16
+	move $a0,$s0
+	syscall
+	
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+	
+	jr $ra
+
+Error: 	li 	$v0,4
+	la 	$a0, error
+	syscall
+	jr 	$ra
+
+
+#CROPPER
+.data
+
+#Must use accurate file path.
+#file paths in MARS are relative to the mars.jar file.
+# if you put mars.jar in the same folder as test2.txt and your.asm, input: should work.
+input:	.asciiz "test.txt"
+output:	.asciiz "cropped.pgm"	#used as output
+buffer:  .space 2048		# buffer for upto 2048 bytes
+newbuff: .space 2048
+x1: .word 0
+x2: .word 23
+y1: .word 0
+y2: .word 6
+headerbuff: .space 2048  #stores header
+#any extra .data you specify MUST be after this line 
+error:	.asciiz "An error occured\n"
+.align 2
+array:	.space 672
+cropped_array:	.space 672
+space: .asciiz" "
+line: .asciiz "\n"
+	.text
+	.globl main
+
+main:	la $a0,input		#readfile takes $a0 as input
+	jal readfile
+
+
+    #load the appropriate values into the appropriate registers/stack positions
+    #appropriate stack positions outlined in function*
+    	addi	$sp,$sp,-8
+    	la	$t1,buffer
+    	la	$t2,newbuff
+    	sw	$t1,0($sp)
+    	sw	$t2,4($sp)
+    	lw	$a0,x1
+    	lw	$a1,x2
+    	lw	$a2,y1
+    	lw	$a3,y2
+	jal crop
+	
+	addi 	$sp,$sp,8
+	
+	la 	$a0, output		#writefile will take $a0 as file location
+	la 	$a1,newbuff		#$a1 takes location of what we wish to write.
+	la	$a2,headerbuff
+	addi	$sp,$sp,-16
+	lw	$t0,x1
+    	lw	$t1,x2
+    	lw	$t2,y1
+    	lw	$t3,y2
+    	sw	$t0,0($sp)
+    	sw	$t1,4($sp)
+    	sw	$t2,8($sp)
+    	sw	$t3,12($sp)
+	#add what ever else you may need to make this work.
+	jal writefile
+	addi	$sp,$sp,16
+	li $v0,10		# exit
+	syscall
+
+readfile:
+#Open the file to be read,using $a0
+	li 	$v0,13
+	li 	$a1,0		#flag for reading
+	li 	$a2,0		#mode ignored
+	syscall
+	move 	$s0,$v0		#save the file descriptor in v0
+#Conduct error check, to see if file exists
+	
+	slt 	$t0,$s0,$0	#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error	#if t0 != 0, go to error
+
+	
+# read from file
+	li	 $v0,14		#syscall to read from an open file
+# use correct file descriptor, and point to buffer
+	add 	$a0,$s0,$0	#cope file decriptor into a0
+	la	 $a1, buffer	#load the address of the input buffer in a1
+# hardcode maximum number of chars to read
+	li 	$a2,2048	#number of characters to be read store in a2
+# read from file
+	syscall
+# address of the ascii string you just read is returned in $v1.
+	slt 	$t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error		#if t0 != 0, go to error
+# the text of the string is in buffer
+	#move $t1,$v1
+# close the file (make sure to check for errors)
+  	li 	$v0,16
+  	add	 $a0,$s0,$0
+  	syscall
+  	
+  	slt 	$t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error	#if t0 != 0, go to error
+	
+	jr $ra
+
+crop:
+#a0=x1
+#a1=x2
+#a2=y1
+#a3=y2
+#16($sp)=buffer
+#20($sp)=newbuffer that will be made
+#Remember to store ALL variables to the stack as you normally would,
+#before starting the routine.
+#Try to understand the math before coding!
+#There are more than 4 arguments, so use the stack accordingly.
+
+#store the values of the buffer in an array
+	addi 	$s7,$0,0		#save the \0 character
+	addi 	$s6,$0,10		#save the \n character
+	addi 	$s5,$0,32		#save the space character
+	addi 	$s4,$0,47
+	addi 	$s3,$0,58
+	
+	lw 	$t1,0($sp)
+	la 	$t2,array
+	
+Loop2:	lb 	$t3,0($t1)
+	lb 	$t4,1($t1)	 
+	beq 	$t3,$s7,End2
+	beq 	$t3,$s6,Next2
+	beq 	$t3,$s5,Next2
+	beq 	$t4,$s7,single2
+	beq 	$t4,$s6,single2
+	beq 	$t4,$s5,single2
+	j 	Number2
+single2:	
+	addi 	$t3,$t3,-48		#means t3 is followed by a space, a end of file or a new line character
+	sw  	$t3,0($t2)		#store in the array
+	addi 	$t1,$t1,1		#increment the address of the string to get the next byte that is a possible integer
+	addi 	$t2,$t2,4		# increment the address of the array to store the next element
+	j 	Loop2
+Next2:	addi 	$t1,$t1,1		#increment the address of the string without storing the character in the array
+					#because it is either a new line character or a space
+	j 	Loop2
+Number2: 
+	addi 	$t3,$t3,-48
+	mul  	$t3,$t3,$s6
+	addi 	$t4,$t4,-48
+	add  	$t3,$t3,$t4
+	sw   	$t3,0($t2)
+	addi 	$t1,$t1,2		#increment the address of the string to get the next byte that is a possible integer
+	addi 	$t2,$t2,4		# increment the address of the array to store the next element
+	j 	Loop2
+	
+End2:
+
+#********* NOW START TO CROP
+
+#fill the cropped_array with the relevant integers values in the array of integer
+	sub	$s0,$a1,$a0		# s0 = x2-x1 
+	addi	$s0,$s0,1		# s0 = x2-x1+1 which is the new width of the image
+	sub	$s1,$a3,$a2		# s1 = y2-y1
+	addi	$s1,$s1,1		# s1 = y2-y1+1 which is the new height of the image
+	mul	$s6,$s0,$s1		#total number of pixel in te cropped_array
+	addi	$s2,$0,0		#counter for the rows y
+	addi	$s3,$0,0		#counter for the column x
+	
+	la	$s4,array
+	la	$s5,cropped_array
+loop_cropper:	
+	slt	$t0,$s2,$a2		#check if y1 > y_curr
+	bne	$t0,$0,not_included		#means y1!<= y_curr
+	slt	$t0,$a3,$s2		#check if y2<y_curr
+	bne	$t0,$0,not_included		#means y_curr!<=y2
+	slt	$t0,$s3,$a0		#check if x1 > x_curr
+	bne	$t0,$0,not_included		#means x1 <= x_curr
+	slt	$t0,$a1,$s3		#check if x_curr>x2+1
+	bne	$t0,$0,not_included		#means x_curr<=x2+1
+					#Here means the pixel should be included in the cropped image so we add it to the cropped array
+	lw	$t1,0($s4)		#load the interger from the array
+	sw	$t1,0($s5)		#store the integer in the cropped array
+	addi	$s4,$s4,4		#increment the array
+	addi	$s5,$s5,4		#increment the cropped array
+	addi	$s3,$s3,1		#increment the column counter x
+	rem	$t5,$s3,24		#remainder of column/width to know if we need to increment y
+	beq	$t5,$0,change_column	#means we need to change the column
+	j	loop_cropper
+
+	
+not_included:
+					#here means pixel is not included
+	addi	$s4,$s4,4		#increment the array
+	addi	$s3,$s3,1		#increment the column counter x
+	rem	$t5,$s3,24		#remainder of column/width to know if we need to increment y
+	beq	$t5,$0,change_column	#means we need to change the column
+	j	loop_cropper
+					
+change_column:
+	beq	$s2,$a3,fill_cropped_buffer	#y_curr == new height of the image so we are done filling the array
+	addi	$s3,$0,0			#set the row x to 0
+	addi	$s2,$s2,1			#i +=1
+	
+	j	loop_cropper
+	
+fill_cropped_buffer:
+	add	$s2,$0,$s0		#copy the width of the image in s2
+	add	$s7,$s1,$0		#copy the heigth of the new image in s7
+	addi	$s0,$0,10		#new line character
+	addi	$s1,$0,0		#counter	
+	addi	$s3,$0,3		#end of text
+	addi	$s4,$0,32		#space character
+	add	$s5,$0,$s6		#copy the total number of pixels in s5			
+	
+#*************copy the transpose array in the new buffer with the same order********************
+	lw	$t1,4($sp)			#Load the address of the new buffer in t1
+	la	$t2,cropped_array		#load the address of the transposed array in t2
+	
+#store the first element in the new buffer
+first_line:	
+	lw	$t3,0($t2)		#load the first element of the array
+	
+	slt	$t4,$t3,$s0		#check if t3<10
+	beq	$t4,$0,big_num_first	#means t3>=10	so need to decompose the number into two character
+	
+	addi	$t3,$t3,48		#ascii value of the integer
+	sb	$t3,0($t1)		#store the pixel value
+	addi	$s1,$s1,1		#increment the counter
+	
+	
+	addi	$t1,$t1,1		#increment the buffer
+	addi 	$t2,$t2,4		#increment the array
+	
+Loop_flip:	
+	lw	$t3,0($t2)		#load the word of the transposed array in t3
+	
+	slt	$t4,$t3,$s0		#check if t3<10
+	beq	$t4,$0,big_num		#means t3>=10	so need to decompose the number into two character
+	
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+	
+	addi	$t3,$t3,48		#ascii value of the integer
+	sb	$t3,0($t1)		#store the pixel value
+	addi	$s1,$s1,1		#increment the counter
+	rem 	$t4,$s1,$s2
+	beq 	$t4,$0,new_line_flip	#multiple of 24 so change line in the file
+	
+	addi 	$t1,$t1,1		#increment the buffer, not a multiple of 24 so add a space between the numbers
+	addi 	$t2,$t2,4		#increment the array
+	j	Loop_flip
+	
+new_line_flip:
+	beq	$s1,$s5,last_flip	#counter == total number of pixel, means we are done
+	addi	$t1,$t1,1		#increment the buffer
+	sb	$s0,0($t1)		#store the new line character
+	addi	$t2,$t2,4		#get the first element of the next line
+	addi	$t1,$t1,1		#increment the buffer
+	j first_line
+	
+big_num:
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+big_num_first:
+	rem	$t4,$t3,10		#last didit of t3 in t4
+	sub	$t3,$t3,$t4		#t3 now multiple of 10
+	div	$t3,$t3,10		#t3 now contain the most significant digit
+	addi	$t4,$t4,48		#convert least significant digit to ascii	
+	addi	$t3,$t3,48		#convert most significant digit to ascii
+					#store the two digits in the new buffer
+	sb	$t3,0($t1)
+	addi	$t1,$t1,1
+	sb	$t4,0($t1)
+	addi	$s1,$s1,1		#increment the counter
+	rem 	$t4,$s1,$s2		# look if counter is a multiple of width, which means we need to change line
+	beq 	$t4,$0,new_line_flip	#multiple of width so change line in the file
+	
+	addi 	$t1,$t1,1		#increment the buffer
+	addi 	$t2,$t2,4		#increment the array
+	j	Loop_flip
+
+#have to convert the number in two characters and store it in the new buffer
+last_flip:	  
+	addi	$t1,$t1,1
+	sb	$0,0($t1)		#store the \0 char at the end of the buffer
+	jr	$ra
+
+writefile:
+#slightly different from Q1.
+#use as many arguments as you would like to get this to work.
+#make sure the header matches the new dimensions!
+	lw	$t0,0($sp)		#t0 = x1
+	lw	$t1,4($sp)		#t1 = x2
+	lw	$t2,8($sp)		#t2 = y1
+	lw	$t3,12($sp)		#t3 = y2
+	sub	$s0,$t1,$t0		# s0 = x2-x1 
+	addi	$s0,$s0,1		# s0 = x2-x1+1 which is the new width of the image
+	sub	$s1,$t3,$t2		# s1 = y2-y1
+	addi	$s1,$s1,1		# s1 = y2-y1+1 which is the new height of the image
+	mul	$s2,$s0,$s1		#total number of pixel in te cropped_array in s2
+	
+	addi	$s3,$0,80		#s3=='P'
+	addi	$s4,$0,50		#s4=='2'
+	addi	$s5,$0,32		#s5==' '
+	addi	$s6,$0,10		#s6=='\n'
+	addi	$s7,$0,0		#s7=='\0'
+	
+#start by filling the header buff
+	la	$t0,($a2)
+	sb	$s3,0($t0)
+	sb	$s4,1($t0)
+	sb	$s6,2($t0)
+	addi	$t0,$t0,3	
+	slti	$t1,$s0,10		#check if width<10
+	bne	$t1,$0,single_width	#means width<=9
+	rem	$t1,$s0,10		#get the last digit of the width
+	sub	$s0,$s0,$t1		#get the most significant bit of the width
+	div	$s0,$s0,10		#get the most significant digit of the width
+	addi	$t1,$t1,48		#convert the two digits in ascii
+	addi	$s0,$s0,48
+	sb	$s0,0($t0)		#store the width follow by a space in the header
+	sb	$t1,1($t0)
+	sb	$s5,2($t0)
+	addi	$t0,$t0,3
+height:
+	slti	$t1,$s1,10		#check if width<10
+	bne	$t1,$0,single_heigth	#means width<=9
+	rem	$t1,$s1,10		#get the last digit of the heigth
+	sub	$s0,$s1,$t1		#get the most significant bit of the heigth
+	div	$s0,$s1,10		#get the most significant digit of the heigth
+	addi	$t1,$t1,48		#convert the two digits in ascii
+	addi	$s0,$s0,48
+	sb	$s1,0($t0)		#store the height follow by a \n in the header
+	sb	$t1,1($t0)
+	sb	$s6,2($t0)
+	addi	$t0,$t0,3
+	j	last_header
+
+single_width:
+	addi	$s0,$s0,48		#convert width integer to ascii
+	sb	$s0,0($t0)		#add the width to the header
+	sb	$s5,1($t0)		#add space after the width
+	addi	$t0,$t0,2
+	j	height
+single_heigth:
+	addi	$s1,$s1,48		#convert width integer to ascii
+	sb	$s1,0($t0)		#add the heigth to the header
+	sb	$s6,1($t0)		#add \n after the header
+	addi	$t0,$t0,2
+last_header:
+	addi	$s0,$0,49		#store '1' in s0
+	addi	$s1,$0,53		#store '5' in s1
+	sb	$s0,0($t0)		#store "15\n\0" in the header
+	sb	$s1,1($t0)
+	sb	$s6,2($t0)
+	sb	$s7,3($t0)
+
+#write in the file
+	add $sp,$sp,-4
+	sw  $a1,0($sp)
+	
+#open file to be written to, using $a0.
+	li $v0,13
+	li $a1,9	#flag for writting
+	li $a2,0	#mode ignored
+	syscall
+	add $s0,$v0,$0	#save the file descriptor in v0
+	
+	slt $t0,$s0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+#write the specified characters as seen on assignment PDF:
+	li $v0,15
+	add $a0,$s0,$0
+	la $a1,headerbuff
+	li $a2,11
+	syscall
+	
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+	
+	li $v0,15
+	lw $a1,0($sp)
+	addi $sp,$sp,4
+	li $a2,2048
+	syscall
+
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+#close the file (make sure to check for errors)	
+	li $v0,16
+	move $a0,$s0
+	syscall
+	
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+	
+	jr $ra	
+Error: 	li 	$v0,4
+	la 	$a0, error
+	syscall
+	jr 	$ra
+
+
+.data
+#Must use accurate file path.
+#file paths in MARS are relative to the mars.jar file.
+# if you put mars.jar in the same folder as test2.txt and your.asm, input: should work.
+input:	.asciiz "test.txt"
+output:	.asciiz "flipped.pgm"	#used as output
+axis: .word 0 # 0=flip around x-axis....1=flip around y-axis
+buffer:  .space 2048		# buffer for upto 2048 bytes
+newbuff: .space 2048
+
+#any extra data you specify MUST be after this line 
+array:	.space 672	#space for 168 element of 1 byte that cn store values between 0 and 255 which is a range big enough
+error:	.asciiz "An error occured\n"
+str: .asciiz "P2\n24 7\n15\n"
+space: .asciiz " "
+	.text
+	.globl main
+
+main:
+    la $a0,input	#readfile takes $a0 as input
+    jal readfile
+
+
+	la $a0,buffer		#$a0 will specify the "2D array" we will be flipping
+	la $a1,newbuff		#$a1 will specify the buffer that will hold the flipped array.
+	la $a2,axis        #either 0 or 1, specifying x or y axis flip accordingly
+	jal flip
+
+
+	la $a0, output		#writefile will take $a0 as file location we wish to write to.
+	la $a1,newbuff		#$a1 takes location of what data we wish to write.
+	jal writefile
+
+	li $v0,10		# exit
+	syscall
+
+readfile:
+#Open the file to be read,using $a0
+	li 	$v0,13
+	li 	$a1,0			#flag for reading
+	li 	$a2,0			#mode ignored
+	syscall
+	move 	$s0,$v0			#save the file descriptor in v0
+#Conduct error check, to see if file exists
+	
+	slt 	$t0,$s0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error		#if t0 != 0, go to error
+
+	
+# read from file
+	li	 $v0,14			#syscall to read from an open file
+# use correct file descriptor, and point to buffer
+	add 	$a0,$s0,$0		#cope file decriptor into a0
+	la	 $a1, buffer		#load the address of the input buffer in a1
+# hardcode maximum number of chars to read
+	li 	$a2,2048		#number of characters to be read store in a2
+# read from file
+	syscall
+# address of the ascii string you just read is returned in $v1.
+	slt 	$t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error		#if t0 != 0, go to error
+# the text of the string is in buffer
+# close the file (make sure to check for errors)
+  	li 	$v0,16
+  	add	 $a0,$s0,$0
+  	syscall
+  	
+  	slt 	$t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne 	$t0,$0,Error		#if t0 != 0, go to error
+
+	jr	$ra
+
+
+
+flip:
+#Can assume 24 by 7 again for the input.txt file
+#Try to understand the math before coding!
+#sore in the 2D array
+	addi 	$s7,$0,0	#save the \0 character
+	addi 	$s6,$0,10	#save the \n character
+	addi 	$s5,$0,32	#save the space character
+	addi 	$s4,$0,47
+	addi 	$s3,$0,58
+	
+	la 	$t1,($a0)
+	la 	$t2,array
+	
+Loop2:	lb 	$t3,0($t1)
+	lb 	$t4,1($t1)	 
+	beq 	$t3,$s7,End2  #if current byte is null
+	beq 	$t3,$s6,Next2 # if current byte is new line
+	beq 	$t3,$s5,Next2 #if current byte is space
+	beq 	$t4,$s7,single2 #if next byte is null
+	beq 	$t4,$s6,single2  #'            '   new line
+	beq 	$t4,$s5,single2  #'            '   space
+	
+	j Number2
+single2:	
+	
+	addi 	$t3,$t3,-48		#means t3 is followed by a space, a null character or a new line character
+	sw  	$t3,0($t2)		#store in the array
+	addi 	$t1,$t1,1		#increment the address of the string to get the next byte that is a possible integer
+	addi 	$t2,$t2,4		# increment the address of the array to store the next element
+	j 	Loop2
+Next2:	addi 	$t1,$t1,1		#increment the address of the string without storing the character in the array
+					#because it is either a new line character or a space
+	j 	Loop2
+Number2: 
+	addi 	$t3,$t3,-48		#convert ascii to integer and store in the array
+	mul  	$t3,$t3,$s6
+	addi 	$t4,$t4,-48
+	add  	$t3,$t3,$t4
+	sw   	$t3,0($t2)
+	addi 	$t1,$t1,2		#increment the address of the string to get the next byte that is a possible integer
+	addi 	$t2,$t2,4		# increment the address of the array to store the next element
+	j 	Loop2
+	
+End2:	lw	$t1,axis
+	beq	$t1,$0,flip_array_x	
+	j 	flip_array_y
+	
+	
+#flip around y-axis ********************************
+#now use the array of integer for the flip
+flip_array_y:
+	addi	$s0,$0,10	#new line character
+	addi	$s1,$0,0	#counter
+	addi	$s2,$0,24	
+	addi	$s3,$0,3		#end of text
+	addi	$s4,$0,32		#space character
+	addi	$s5,$0,168
+			
+
+#Inverse the line horizontally --> first pixel will be the last pixel in the first line
+	la	$t1,0($a1)		#Load the address of the new buffer in t1
+	la	$t2,array		#load the address of the unflippled array in t2
+	addi	$t2,$t2,92		#get the 24th pixel in the first line
+	
+#store the first element in the new buffer
+first_line:	
+	lw	$t3,0($t2)		#load the 24th word
+	
+	slt	$t4,$t3,$s0		#check if t3<10
+	beq	$t4,$0,big_num_first		#means t3>=10	so need to decompose the number into two character
+	
+	addi	$t3,$t3,48		#ascii value of the integer
+	sb	$t3,0($t1)		#store the pixel value
+	addi	$s1,$s1,1		#increment the counter
+	
+	
+	addi	$t1,$t1,1		#increment the buffer
+	addi 	$t2,$t2,-4		#increment the array
+	
+Loop_flip:	
+	lw	$t3,0($t2)		#load the 24th word
+	
+	slt	$t4,$t3,$s0		#check if t3<10
+	beq	$t4,$0,big_num		#means t3>=10	so need to decompose the number into two character
+	
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+	
+	addi	$t3,$t3,48		#ascii value of the integer
+	sb	$t3,0($t1)		#store the pixel value
+	addi	$s1,$s1,1		#increment the counter
+	rem 	$t4,$s1,$s2
+	beq 	$t4,$0,new_line_flip	#multiple of 24 so change line in the file
+	
+	addi 	$t1,$t1,1		#increment the buffer, not a multiple of 24 so add a space between the numbers
+	addi 	$t2,$t2,-4		#increment the array
+	j	Loop_flip
+	
+new_line_flip:
+	beq	$s1,$s5,last_flip	#counter == 168, means we are done
+	addi	$t1,$t1,1		#increment the buffer
+	sb	$s0,0($t1)		#store the new line character
+	addi	$t2,$t2,188		#get the last element of the next line
+	addi	$t1,$t1,1		#increment the buffer
+	j first_line
+	
+big_num:
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+big_num_first:
+	rem	$t4,$t3,10		#last didit of t3 in t4
+	sub	$t3,$t3,$t4		#t3 now multiple of 10
+	div	$t3,$t3,10		#t3 now contain the most significant digit
+	addi	$t4,$t4,48		#convert least significant digit to ascii	
+	addi	$t3,$t3,48		#convert most significant digit to ascii
+					#store the two digits in the new buffer
+	sb	$t3,0($t1)
+	addi	$t1,$t1,1
+	sb	$t4,0($t1)
+	addi	$s1,$s1,1		#increment the counter
+	rem 	$t4,$s1,$s2
+	beq 	$t4,$0,new_line_flip	#multiple of 24 so change line in the file
+	
+	addi 	$t1,$t1,1		#increment the buffer
+	addi 	$t2,$t2,-4		#increment the array
+	j	Loop_flip
+
+#have to convert the number in two characters and store it in the new buffer
+last_flip:	  
+	addi	$t1,$t1,1
+	sb	$0,0($t1)		#store the \0 char at the end of the buffer
+	jr	$ra
+#vertical, x-axis************************************
+flip_array_x:
+	addi	$s0,$0,10	#new line character
+	addi	$s1,$0,0	#counter
+	addi	$s2,$0,24	
+	addi	$s3,$0,3		#end of text
+	addi	$s4,$0,32		#space character
+	addi	$s5,$0,168
+			
+
+#first pixel will be the first pixel in the last line
+	la	$t1,0($a1)		#Load the address of the new buffer in t1
+	la	$t2,array		#load the address of the unflippled array in t2
+	addi	$t2,$t2,576		#get the 1st pixel in the last line
+	
+#store the first element in the new buffer
+first_line_x:	
+	lw	$t3,0($t2)		#load the 24th word
+	
+	slt	$t4,$t3,$s0		#check if t3<10
+	beq	$t4,$0,big_num_first_x		#means t3>=10	so need to decompose the number into two character
+	
+	addi	$t3,$t3,48		#ascii value of the integer
+	sb	$t3,0($t1)		#store the pixel value
+	addi	$s1,$s1,1		#increment the counter
+	
+	
+	addi	$t1,$t1,1		#increment the buffer
+	addi 	$t2,$t2,4		#increment the array
+	
+Loop_flip_x:	
+	lw	$t3,0($t2)		#load the 24th word
+	
+	slt	$t4,$t3,$s0		#check if t3<10
+	beq	$t4,$0,big_num_x		#means t3>=10	so need to decompose the number into two character
+	
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+	
+	addi	$t3,$t3,48		#ascii value of the integer
+	sb	$t3,0($t1)		#store the pixel value
+	addi	$s1,$s1,1		#increment the counter
+	rem 	$t4,$s1,$s2
+	beq 	$t4,$0,new_line_flip_x	#multiple of 24 so change line in the file
+	
+	addi 	$t1,$t1,1		#increment the buffer, not a multiple of 24 so add a space between the numbers
+	addi 	$t2,$t2,4		#increment the array
+	j	Loop_flip_x
+	
+new_line_flip_x:
+	beq	$s1,$s5,last_flip_x	#counter == 168, means we are done
+	addi	$t1,$t1,1		#increment the buffer
+	sb	$s0,0($t1)		#store the new line character
+	addi	$t2,$t2,-188		#get the first element of the next line
+	addi	$t1,$t1,1		#increment the buffer
+	j first_line_x
+	
+big_num_x:
+	sb 	$s4,0($t1)		#add a space
+	addi	$t1,$t1,1		#increment the buffer
+big_num_first_x:
+	rem	$t4,$t3,10		#last didit of t3 in t4
+	sub	$t3,$t3,$t4		#t3 now multiple of 10
+	div	$t3,$t3,10		#t3 now contain the most significant digit
+	addi	$t4,$t4,48		#convert least significant digit to ascii	
+	addi	$t3,$t3,48		#convert most significant digit to ascii
+					#store the two digits in the new buffer
+	sb	$t3,0($t1)
+	addi	$t1,$t1,1
+	sb	$t4,0($t1)
+	addi	$s1,$s1,1		#increment the counter
+	rem 	$t4,$s1,$s2
+	beq 	$t4,$0,new_line_flip_x	#multiple of 24 so change line in the file
+	
+	addi 	$t1,$t1,1		#increment the buffer
+	addi 	$t2,$t2,4		#increment the array
+	j	Loop_flip_x
+
+#have to convert the number in two characters and store it in the new buffer
+last_flip_x:	  
+	addi	$t1,$t1,1
+	sb	$0,0($t1)		#store the \0 char at the end of the buffer
+	jr $ra
+writefile:
+#slightly different from Q1.
+#use as many arguments as you would like to get this to work.
+#make sure the header matches the new dimensions!
+	add 	$sp,$sp,-4
+	sw  	$a1,0($sp)	#save the address of the newbuff
+	
+#open file to be written to, using $a0.
+	li $v0,13
+	li $a1,9		#flag for writting
+	li $a2,0		#mode ignored
+	syscall
+	add $s0,$v0,$0		#save the file descriptor in v0
+	
+	slt $t0,$s0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+#write the specified characters as seen on assignment PDF:
+	li $v0,15
+	add $a0,$s0,$0
+	la $a1,str
+	li $a2,11
+	syscall
+	
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+	
+	li $v0,15
+	lw $a1,0($sp)
+	li $a2,2048
+	syscall
+
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+#close the file (make sure to check for errors)	
+	li $v0,16
+	move $a0,$s0
+	syscall
+	
+	slt $t0,$v0,$0		#check if $s0<0, means there is no such file, and t0 set to 1
+	bne $t0,$0,Error	#if t0 != 0, go to error
+	
+	jr $ra
+	
+Error: 	li 	$v0,4
+	la 	$a0, error
+	syscall
+	jr 	$ra
