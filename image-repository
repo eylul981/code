@@ -1,0 +1,695 @@
+
+//Created an image database with basic SQL commands like create, delete, search;
+//Used Java, Eclipse as IDE for this project,
+//Users can create, delete albums, add fields like name, country timeCreated, people;
+//How to run 
+// type;
+//CREATE ALBUM Travel Country Time People 
+//press enter and then try;
+//CREATE RECORD Travel
+//Record ID:1   Album Name:Travel
+//There are 3 fields. Enter fields one by one:
+//Country:Italy, Time:2018, People:parents
+//To see all albums created try 
+// LIST RECORDS 
+//Type Name:Travel
+
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+//import java.sql.Timestamp;
+import java.util.Arrays;
+import java.util.Scanner;
+
+public class sys {
+	
+	public static int FILE_SIZE = 30; //KB
+	public static int FILE_MAX_PAGES = 20;
+	public static int MAX_FIELDS_RECORD = 10;
+	public static int MAX_LENGTH_TYPE_NAME = 20;
+	public static int MAX_LENGTH_FIELD_NAME = 20;
+	public static int MAX_LENGTH_RECORD_NAME = 20;
+	
+	public static int PAGE_MAX_RECORD = 10;
+	public static int PAGE_SIZE = 128; //Byte
+	
+	public static int NUMBER_OF_FIELDS_SIZE = 4; // 4Byte, integer
+	public static int NUMBER_OF_RECORDS_SIZE = 4; // 4Byte, integer
+	public static int RECORD_ID_SIZE = 4; // 4Byte, integer
+	
+	public static int IS_DELETED_SIZE = 1; // 1Byte, Boolean
+	
+	private static String sysCatalogFileName="SystemCatalog.txt";
+	private static String command;
+	private static RandomAccessFile sysCatalogFile;
+	private static Scanner sc;
+	private static String[] cmdSplitted;
+	
+	public static void main(String[] args) throws IOException {
+		checkSystemCatalogFile();
+		while(true) {
+			showmenu();
+			sc = new Scanner (System.in);
+			System.out.print(">>");
+			command= sc.nextLine();
+			choice();
+		}
+		
+	}
+	
+	private static void checkSystemCatalogFile() {
+		//create system catalog file
+		try {
+			File fileObject = new File(sysCatalogFileName);
+			//if (!fileObject.exists()) {
+				createSysCatalogFile();
+			//}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public static void showmenu() {
+		System.out.println("****************************************************");
+		System.out.println("Choose one of the operations below:");
+		System.out.println("************DDL OPERATIONS***************************");
+		System.out.println("CREATE ALBUM");
+		System.out.println("DELETE ALBUM");
+		System.out.println("LIST ALBUMS");
+		System.out.println("************DML OPERATIONS***************************");
+		System.out.println("CREATE RECORD");
+		System.out.println("DELETE RECORD");
+		System.out.println("SEARCH RECORD");
+		System.out.println("LIST RECORDS");
+		System.out.println("************EXIT THE SYSTEM***************************");
+		System.out.println("EXIT SYSTEM");
+		System.out.println("****************************************************");
+	}
+	
+	public static void choice() throws IOException {
+		
+		//remove leading and trailing spaces from command
+		command = command.trim();
+		
+		//split command into words
+		cmdSplitted = command.split("\\s+");
+		if(cmdSplitted.length<2)
+			System.out.println("Error in the menu selection!");
+		else if(cmdSplitted[0].equals("CREATE") && cmdSplitted[1].equals("ALBUM"))
+			createType();
+		else if(cmdSplitted[0].equals("DELETE") && cmdSplitted[1].equals("ALBUM"))
+			deleteType();
+		else if(cmdSplitted[0].equals("LIST") && cmdSplitted[1].equals("ALBUMS"))
+			listTypes();
+		else if(cmdSplitted[0].equals("CREATE") && cmdSplitted[1].equals("RECORD"))
+			createRecord();
+		else if(cmdSplitted[0].equals("DELETE") && cmdSplitted[1].equals("RECORD"))
+			deleteRecord();
+		else if(cmdSplitted[0].equals("SEARCH") && cmdSplitted[1].equals("RECORD"))
+			searchRecord();
+		else if(cmdSplitted[0].equals("LIST") && cmdSplitted[1].equals("RECORDS"))
+			listRecords();
+		else if(cmdSplitted[0].equals("EXIT") && cmdSplitted[1].equals("SYSTEM"))
+			exitSystem();
+		else {
+			System.out.println("Error in the menu selection!");
+			System.out.println(command);
+		}
+			
+	}
+
+	private static void exitSystem() {
+		//close scanner
+		sc.close();
+		
+		//close files
+		try {
+			sysCatalogFile.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		System.exit(0); // system can exit safely
+	}
+
+
+	private static void createRecord() throws IOException {		
+		System.out.print("Record ID: ");
+		int recordID = sc.nextInt();
+		System.out.print("Album Name: ");
+		String typeName = sc.next();
+		if(!(isTypeAlreadyExist(typeName))) {
+			System.out.println("There is no such a type name!, Please give another type name.");
+			sc.nextLine();
+			promptEnterKey();
+			return;
+		}
+		if((isRecordAlreadyExist(typeName, recordID))) {
+			System.out.println("Record with ID number "+recordID+" already exists for the type name "+typeName+". Please give another record ID.");
+			sc.nextLine();
+			promptEnterKey();
+			return;
+		}
+		//open typename file creating record
+		File f = new File(typeName + ".dat");
+		RandomAccessFile typeFile = new RandomAccessFile(f, "rw");
+		typeFile.seek(0);
+		int numberOfRecords = typeFile.readInt();
+		int pageNumber=numberOfRecords/MAX_FIELDS_RECORD + 1;
+		int numberOfFields = typeFile.readInt();
+		String [] fields = new String [numberOfFields];
+		System.out.println("There are "+numberOfFields+" fields. Enter fields one by one: ");
+
+		for(int i=0; i<numberOfFields; i++) {
+			//get field name
+			byte [] fieldNameArr = new byte[MAX_LENGTH_TYPE_NAME];
+			typeFile.read(fieldNameArr, 0, MAX_LENGTH_TYPE_NAME);
+			String fieldName = new String(fieldNameArr, StandardCharsets.UTF_8);
+			fieldName=fieldName.replaceAll("#", ""); //remove #'s from the fieldname
+			do {
+				System.out.print(fieldName+": ");
+				fields[i] = sc.next();
+				if(fields[i].length()>MAX_LENGTH_RECORD_NAME)
+					System.out.println("Please enter a record name shorter than "+(MAX_LENGTH_RECORD_NAME+1)+" characters");
+			}while(fields[i].length()>MAX_LENGTH_RECORD_NAME);
+			
+			for(int j=fields[i].length(); j<MAX_LENGTH_RECORD_NAME; j++)
+				fields[i] +="#";
+		}
+		numberOfRecords++; //increment number of records by 1
+		typeFile.seek(0); //go to the beginning of the file
+		typeFile.writeInt(numberOfRecords); // update number of records in the file header
+		
+		typeFile.seek(typeFile.length()); //go to the end of the file
+		typeFile.writeInt(recordID); // update number of records in the file header
+		typeFile.writeByte(0); //set isDeleted field of record as 0, i.e. not deleted
+		for(int i=0; i<numberOfFields; i++)
+			typeFile.writeBytes(fields[i]);//write record fields including extra # characters
+		typeFile.close();
+		System.out.println("Record "+recordID +" is saved succesfully in the page " +pageNumber+" for the type "+typeName);
+		sc.nextLine();
+		promptEnterKey();
+	}
+
+	private static void deleteRecord() throws IOException {
+		System.out.print("Type Name: ");
+		String typeName = sc.next();
+				
+		if(!(isTypeAlreadyExist(typeName))) {
+			System.out.println("There is no such a type name!, Please give another type name.");
+			sc.nextLine();
+			promptEnterKey();
+			return;
+		}
+		
+		//open typename file creating record
+		File f = new File(typeName + ".dat");
+		RandomAccessFile typeFile = new RandomAccessFile(f, "rw");
+		typeFile.seek(0);
+		int numberOfRecords = typeFile.readInt();
+		int numberOfFields = typeFile.readInt();
+		if(numberOfRecords==0) {
+			System.out.println("Record list is empty for this type!");
+			promptEnterKey();
+			return;
+		}
+		System.out.print("Record ID to be deleted: ");
+		//get the record ID to be deleted from the user
+		int recordIDToBeDeleted = sc.nextInt();
+		
+		int headerSize = getTotalRecordHeaderSize(numberOfFields);
+		int recordSize = getTotalRecordSize(numberOfFields);
+		int numberOfDeleted = 0;
+		boolean isFound =false;
+		// go to the first record (this is done automatically)
+		for(int i=0; i<numberOfRecords+numberOfDeleted; i++) {
+			typeFile.seek(headerSize+i*recordSize);
+			int recordID = typeFile.readInt();
+			
+			if(recordIDToBeDeleted!=recordID)
+				continue;
+			
+			//check whether the record is already deleted or not
+			int isDeleted = typeFile.readByte();
+			if(isDeleted==1) {
+				numberOfDeleted++;
+				continue;
+			}
+			else if(isDeleted==0) {
+				typeFile.seek(typeFile.getFilePointer()-1); // go one byte back
+				typeFile.write(1);
+			}
+			isFound=true; //record is found, and it will be deleted
+			System.out.println("Following record is successfully deleted:");
+			System.out.print("RECORD-"+recordIDToBeDeleted+": ");
+
+			for (int j = 0; j < numberOfFields; j++) {
+				byte [] fieldArr = new byte[MAX_LENGTH_RECORD_NAME];
+				typeFile.read(fieldArr, 0, MAX_LENGTH_RECORD_NAME);
+				String field = new String(fieldArr, StandardCharsets.UTF_8);
+				field=field.replaceAll("#", "");
+				System.out.print(field+" ");
+			}
+			System.out.println();
+			
+			numberOfRecords--; //decrement number of records by one
+			typeFile.seek(0); //go to the beginning of the file
+			typeFile.writeInt(numberOfRecords); //update number of fields
+			
+			break; //do not search anymore
+		}
+		if(!isFound)
+			System.out.println("Record-"+recordIDToBeDeleted+" could not be found for the type "+typeName);
+		typeFile.close();
+		sc.nextLine();
+		promptEnterKey();
+	}
+	
+	private static void searchRecord() throws IOException {
+		System.out.print("Type Name: ");
+		String typeName = sc.next();
+				
+		if(!(isTypeAlreadyExist(typeName))) {
+			System.out.println("There is no such a type name!, Please give another type name.");
+			sc.nextLine();
+			promptEnterKey();
+			return;
+		}
+		
+		//open typename file creating record
+		File f = new File(typeName + ".dat");
+		RandomAccessFile typeFile = new RandomAccessFile(f, "rw");
+		typeFile.seek(0);
+		int numberOfRecords = typeFile.readInt();
+		int numberOfFields = typeFile.readInt();
+		if(numberOfRecords==0) {
+			System.out.println("Record list is empty for this type!");
+			promptEnterKey();
+			return;
+		}
+		System.out.print("Record ID to be searched: ");
+		//get the record ID to be searched from the user
+		int recordIDToBeSearched = sc.nextInt();
+		
+		int headerSize = getTotalRecordHeaderSize(numberOfFields);
+		int recordSize = getTotalRecordSize(numberOfFields);
+		int numberOfDeleted = 0;
+		// go to the first record (this is done automatically)
+		for(int i=0; i<numberOfRecords+numberOfDeleted; i++) {
+			typeFile.seek(headerSize+i*recordSize);
+			int recordID = typeFile.readInt();
+			
+			if(recordIDToBeSearched!=recordID)
+				continue;
+			
+			//check whether the record is deleted or not
+			int isDeleted = typeFile.readByte();
+			if(isDeleted==1) {
+				numberOfDeleted++;
+				continue;
+			}
+			System.out.println("Searched record is found:");
+			System.out.print("RECORD-"+recordID+": ");
+
+			for (int j = 0; j < numberOfFields; j++) {
+				byte [] fieldArr = new byte[MAX_LENGTH_RECORD_NAME];
+				typeFile.read(fieldArr, 0, MAX_LENGTH_RECORD_NAME);
+				String field = new String(fieldArr, StandardCharsets.UTF_8);
+				field=field.replaceAll("#", "");
+				System.out.print(field+" ");
+			}
+			System.out.println();
+			break; //do not search anymore
+		}
+		sc.nextLine();
+		promptEnterKey();
+	}
+	
+	private static void listRecords() throws IOException {
+		System.out.print("Type Name: ");
+		String typeName = sc.next();
+				
+		if(!(isTypeAlreadyExist(typeName))) {
+			System.out.println("There is no such a type name!, Please give another type name.");
+			sc.nextLine();
+			promptEnterKey();
+			return;
+		}
+		
+		//open typename file creating record
+		File f = new File(typeName + ".dat");
+		RandomAccessFile typeFile = new RandomAccessFile(f, "rw");
+		typeFile.seek(0);
+		int numberOfRecords = typeFile.readInt();
+		int numberOfFields = typeFile.readInt();
+		if(numberOfRecords==0) {
+			System.out.println("Record list is empty for this type!");
+			promptEnterKey();
+			return;
+		}
+		if(numberOfRecords==1)
+			System.out.println("There is only one record:");
+		else
+			System.out.println("There are "+numberOfRecords +" records:");
+		System.out.print(typeName+" ");
+		for (int i = 0; i < numberOfFields; i++) {
+			//print field name
+			byte [] fieldNameArr = new byte[MAX_LENGTH_TYPE_NAME];
+			typeFile.read(fieldNameArr, 0, MAX_LENGTH_TYPE_NAME);
+			String fieldName = new String(fieldNameArr, StandardCharsets.UTF_8);
+			fieldName =fieldName.replaceAll("#", "");
+			System.out.print(fieldName+" ");
+		}
+		System.out.println(); 
+		
+		int headerSize = getTotalRecordHeaderSize(numberOfFields);
+		int recordSize = getTotalRecordSize(numberOfFields);
+		int numberOfDeleted = 0;
+		// go to the first record (this is done automatically)
+		for(int i=0; i<numberOfRecords+numberOfDeleted; i++) {
+			typeFile.seek(headerSize+i*recordSize);
+			int recordID = typeFile.readInt();
+			
+			//check whether the record is deleted or not
+			int isDeleted = typeFile.readByte();
+			if(isDeleted==1) {
+				numberOfDeleted++;
+				continue;
+			}
+			System.out.print("RECORD-"+recordID+": ");
+
+			for (int j = 0; j < numberOfFields; j++) {
+				byte [] fieldArr = new byte[MAX_LENGTH_RECORD_NAME];
+				typeFile.read(fieldArr, 0, MAX_LENGTH_RECORD_NAME);
+				//System.out.println("currpos: "+typeFile.getFilePointer());
+				String field = new String(fieldArr, StandardCharsets.UTF_8);
+				field=field.replaceAll("#", "");
+				System.out.print(field+" ");
+			}
+			System.out.println();
+		}
+		sc.nextLine();
+		promptEnterKey();
+	}
+
+
+
+	private static void listTypes() throws IOException {
+		long fileSize = sysCatalogFile.length();
+		if(fileSize ==0) {
+			System.out.println("Type list is empty!");
+			promptEnterKey();
+			return;
+		}
+		//go to the beginning of the system catalog file
+		sysCatalogFile.seek(0);
+		int incrementAmount;
+		for(int i=0; i<fileSize; i+=incrementAmount) {
+			//go to the next type field
+			sysCatalogFile.seek(i);
+			//get type name
+			byte [] typeNameArr = new byte[MAX_LENGTH_TYPE_NAME];
+			sysCatalogFile.read(typeNameArr, 0, MAX_LENGTH_TYPE_NAME);
+			String typeName = new String(typeNameArr, StandardCharsets.UTF_8);
+			//String typeName = sysCatalogFile.readUTF();
+			//remove # characters from the string
+			typeName = typeName.replaceAll("#", "");
+			
+			// return the file pointer
+	         //System.out.println("sysCatalogFile current pos: " + sysCatalogFile.getFilePointer());
+	         
+			//get number of fields
+			int numberOfFields = sysCatalogFile.readInt();
+			//byte [] numberOfFieldsArr = new byte[NUMBER_OF_FIELDS_SIZE];
+			//sysCatalogFile.read(numberOfFieldsArr, 0, NUMBER_OF_FIELDS_SIZE);
+			//String typeName = new String(typeNameArr, StandardCharsets.UTF_8);
+			//int numberOfFields = new BigInteger(numberOfFieldsArr).intValue();
+			//System.out.println(Arrays.toString(numberOfFieldsArr));
+			
+			
+			//System.out.println("numberOfFields: " +numberOfFields);
+			
+			//get whether the type name is deleted or not
+			int isDeleted = sysCatalogFile.readByte();
+			
+			//update incrementAmount
+			incrementAmount = getTotalTypeEntrySize(numberOfFields);
+			
+			//if it is deleted, go to the next type
+			if(isDeleted==1) {
+				continue;
+			}
+			System.out.print(typeName+ " ");
+
+			//get fields one by one and print them
+			for(int j=0; j<numberOfFields*MAX_LENGTH_FIELD_NAME; j+=MAX_LENGTH_FIELD_NAME) {
+				//get field name
+				byte [] fieldNameArr = new byte[MAX_LENGTH_TYPE_NAME];
+				sysCatalogFile.read(fieldNameArr,0, MAX_LENGTH_TYPE_NAME);
+				String fieldName = new String(fieldNameArr, StandardCharsets.UTF_8);
+				//remove # characters from the string
+				fieldName = fieldName.replaceAll("#", "");
+				System.out.print(fieldName+ " ");
+			}
+			//got to new line for the next type name and fields
+			System.out.println();
+		}
+		promptEnterKey();
+		
+	}
+
+	private static void deleteType() throws IOException {
+		if (cmdSplitted.length<=2){
+			System.out.println("Error in command, please provide TypeName to be deleted!");
+			promptEnterKey();
+			return;
+		}
+		String typeNameToBeDeleted = cmdSplitted[2];
+		
+		long fileSize = sysCatalogFile.length();
+		if(fileSize ==0) {
+			System.out.println("Type list is empty!");
+			promptEnterKey();
+			return;
+		}
+		//go to the beginning of the system catalog file
+		sysCatalogFile.seek(0);
+		int incrementAmount;
+		for(int i=0; i<fileSize; i+=incrementAmount) {
+			//go to the next type field
+			sysCatalogFile.seek(i);
+			//get type name
+			byte [] typeNameArr = new byte[MAX_LENGTH_TYPE_NAME];
+			sysCatalogFile.read(typeNameArr, 0, MAX_LENGTH_TYPE_NAME);
+			String typeName = new String(typeNameArr, StandardCharsets.UTF_8);
+			//remove # characters from the string
+			typeName = typeName.replaceAll("#", "");
+			
+			//get number of fields
+			int numberOfFields = sysCatalogFile.readInt();
+			
+			//get whether the type name is deleted or not
+			int isDeleted = sysCatalogFile.readByte();
+			
+			//update incrementAmount
+			incrementAmount = getTotalTypeEntrySize(numberOfFields);
+			
+			//if it is deleted, go to the next type
+			if(isDeleted==1) {
+				if(typeName.equals(typeNameToBeDeleted)) {
+					System.out.println(typeName + " is already deleted!");
+					promptEnterKey();
+					return;
+				}
+				continue;
+			}
+			else if(typeName.equals(typeNameToBeDeleted)) {
+				sysCatalogFile.seek(sysCatalogFile.getFilePointer()-1);
+				sysCatalogFile.writeByte(1); //set isDeleted field as 1
+				
+				
+				//timestamp will be used for getting the current time in milliseconds
+				Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+				
+				//delete the data file for this type
+				File file = new File(typeName +".dat");
+				File fileDeleted = new File(typeName +"_DELETED_"+timestamp.getTime()+".dat");
+		          
+				// Rename file (or directory)
+				boolean success = file.renameTo(fileDeleted);
+
+				if (!success) {
+					System.out.println(typeName + " is deleted, but corresponding data dile could not be deleted!");
+				}
+				else {
+					System.out.println(typeName + " is successfully deleted.");
+				}
+				promptEnterKey();
+				return;
+			}
+		}
+		System.out.println(typeNameToBeDeleted + " could not be found!");
+		promptEnterKey();
+		return;
+	}
+
+	private static void createType() throws IOException {
+		if (cmdSplitted.length>2){
+			String typeName = cmdSplitted[2];
+			
+			//used for type names shorter than MAX_LENGTH_FIELD_NAME
+			String tempTypeName = cmdSplitted[2];
+
+			//check type name length
+			int typeNameSize = typeName.length();
+			if(typeNameSize>MAX_LENGTH_TYPE_NAME) {
+				System.out.println("Error in command, please provide a TypeName less than " + MAX_LENGTH_TYPE_NAME + " characters!");
+				promptEnterKey();
+				return;
+			}
+			else if(isTypeAlreadyExist(tempTypeName)) {
+				System.out.println("There exists a Type Name with the same name! Try another type name.");
+				promptEnterKey();
+				return;
+			}
+			//put additional # characters for extending each type name size to MAX_LENGTH_TYPE_NAME
+			else if(typeNameSize<MAX_LENGTH_TYPE_NAME) {
+				for(int j = typeNameSize; j<MAX_LENGTH_TYPE_NAME; j++)
+					tempTypeName+="#";
+			}
+			//else if length == MAX_LENGTH_TYPE_NAME, then do nothing
+			
+			//3 -> CREATE TYPE type_name 
+			int numberOfFields = cmdSplitted.length-3;
+			if(numberOfFields>MAX_FIELDS_RECORD) {
+				System.out.println("Error in command, please provide fields less than " + MAX_FIELDS_RECORD + " !");
+				promptEnterKey();
+				return;
+			}
+			//create a new array for fields
+			String [] typeFields = new String [numberOfFields];
+			
+			//copy type names from command to the typeFields array 
+			System.arraycopy(cmdSplitted, 3, typeFields, 0, cmdSplitted.length-3);
+			
+			//check each type length
+			for (int i = 0; i < typeFields.length; i++) {
+				int size = typeFields[i].length();
+				if(size>MAX_LENGTH_FIELD_NAME) {
+					System.out.println("Error in command, field name " + typeFields[i] + " is greater than, max. allowed size: " + MAX_LENGTH_FIELD_NAME + " !");
+					promptEnterKey();
+					return;
+				}
+				//put additional # characters for extending each field name size to MAX_LENGTH_FIELD_NAME
+				else if(size<MAX_LENGTH_FIELD_NAME) {
+					for(int j = size; j<MAX_LENGTH_FIELD_NAME; j++)
+						typeFields[i]+="#";
+				}
+				//if length == MAX_LENGTH_FIELD_NAME, then do nothing
+			}
+			
+			//go to the end of the system catalog file
+			sysCatalogFile.seek(sysCatalogFile.length());
+			sysCatalogFile.writeBytes(tempTypeName); //including # chars, if necessary, 20 bytes
+			//sysCatalogFile.writeUTF(tempTypeName); //including # chars, if necessary, 20 bytes
+			sysCatalogFile.writeInt(numberOfFields); //write number of fields as 4 byte
+			sysCatalogFile.writeByte(0); //write isDeleted field as 0 by default
+			for(int i=0; i<numberOfFields; i++) {
+				sysCatalogFile.writeBytes(typeFields[i]);
+			}
+			
+			//create file for each type
+			File f = new File(typeName + ".dat");
+			RandomAccessFile typeFile = new RandomAccessFile(f, "rw");
+			
+			//initial number of records is set as 0
+			typeFile.writeInt(0);
+			
+			//set number of fields
+			typeFile.writeInt(numberOfFields);  
+			
+			//save type fields to the file
+			for(int i=0; i<numberOfFields; i++) {
+				typeFile.writeBytes(typeFields[i]);
+			}
+			
+			typeFile.close();
+			
+			System.out.println("Type " +typeName + " is created succcessfully.");
+			promptEnterKey();
+			return;
+		}
+		else {
+			System.out.println("Error in command, please provide TypeName");
+			promptEnterKey();
+			return;
+		}
+		
+	}
+	
+	//search for the typeName in this
+	private static boolean isTypeAlreadyExist(String typeName) throws IOException {
+		
+		long fileSize = sysCatalogFile.length();
+
+		//go to the beginning of the system catalog file
+		sysCatalogFile.seek(0);
+		int incrementAmount;
+		for(int i=0; i<fileSize; i+=incrementAmount) {
+			//go to the next type field
+			sysCatalogFile.seek(i);
+			//get type name
+			byte [] typeNameArr = new byte[MAX_LENGTH_TYPE_NAME];
+			sysCatalogFile.read(typeNameArr, 0, MAX_LENGTH_TYPE_NAME);
+			String typeNameCurr = new String(typeNameArr, StandardCharsets.UTF_8);
+			//remove # characters from the string
+			typeNameCurr = typeNameCurr.replaceAll("#", "");
+			
+			//get number of fields
+			int numberOfFields = sysCatalogFile.readInt();
+			
+			//get whether the type name is deleted or not
+			int isDeleted = sysCatalogFile.readByte();
+			
+			//update incrementAmount
+			incrementAmount = getTotalTypeEntrySize(numberOfFields);
+			
+			//if it is deleted, go to the next type
+			if(isDeleted==1)
+				continue;
+			else if(typeNameCurr.equals(typeName))
+				return true;
+		}
+		return false;
+	}
+	
+	private static boolean isRecordAlreadyExist(String typeName, int recordID) {
+		return false;
+	}
+	
+	private static int getTotalTypeEntrySize(int numberOfFields) {
+		return MAX_LENGTH_TYPE_NAME + NUMBER_OF_FIELDS_SIZE + IS_DELETED_SIZE 
+				+ numberOfFields*MAX_LENGTH_FIELD_NAME;
+	}
+	
+	private static int getTotalRecordHeaderSize(int numberOfFields) {
+		return NUMBER_OF_RECORDS_SIZE + NUMBER_OF_FIELDS_SIZE 
+				+ numberOfFields*MAX_LENGTH_FIELD_NAME;
+	}
+	private static int getTotalRecordSize(int numberOfFields) {
+		return RECORD_ID_SIZE + IS_DELETED_SIZE 
+				+ numberOfFields*MAX_LENGTH_RECORD_NAME;
+	}
+	
+	private static void createSysCatalogFile() throws IOException {
+		sysCatalogFile = new RandomAccessFile(sysCatalogFileName, "rw");
+	}
+	
+	public static void promptEnterKey(){
+		   System.out.println("Press \"ENTER\" to continue...");
+		   sc.nextLine();
+	}
+
+}
