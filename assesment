@@ -1,0 +1,10 @@
+import pandas as pd 
+
+df=pd.read_csv("DataSample.csv", skipinitialspace=True)
+poi=pd.read_csv("POIList.csv", skipinitialspace=True)
+
+#drop same points
+poi=poi.drop_duplicates(subset=['Latitude', 'Longitude'])
+df=df.drop_duplicates(subset=['TimeSt','Latitude', 'Longitude'])
+print(df)
+print(poi)
